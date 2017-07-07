@@ -15,7 +15,7 @@ We can derive the implementation for the following functions automatically:
 ```haskell
 heqSimpleGadt :: SimpleGadt a -> SimpleGadt b -> Bool
 heqSimpleGadt SimpleGadtT1 SimpleGadtT1 = True
-heqSimpleGadt SimpleGadtT1 SimpleGadtT1 = True
+heqSimpleGadt SimpleGadtT2 SimpleGadtT2 = True
 ...
 heqSimpleGadt _ _ = False
 
