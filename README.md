@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/rubenpieters/derive-het.svg?branch=master)](https://travis-ci.org/rubenpieters/derive-het)
+
 # derive-het
 
 Automatic derivation of heterogeneous functions (such as equality and ordering) for simple GADTs.
