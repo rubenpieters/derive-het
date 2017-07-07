@@ -17,4 +17,8 @@ cabal.sandbox.config
 *.eventlog
 .stack-work/
 cabal.project.local
+<<<<<<< 391ca76cae9f618e65a5fbbaf1f0f8228c5bfa63
 .HTF/
+=======
+.HTF/
+>>>>>>> add initial implementation
