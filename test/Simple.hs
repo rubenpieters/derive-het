@@ -13,7 +13,9 @@ data SimpleGadt2 a where
 -- derive functions
 genHetEq ''SimpleGadt2
 genHetLte ''SimpleGadt2
+genHetCmp ''SimpleGadt2
 
 -- sample usage
 sample1 = heqSimpleGadt2 SimpleGadt2T1 SimpleGadt2T1
 sample2 = hlteSimpleGadt2 SimpleGadt2T1 SimpleGadt2T1
+sample3 = hcmpSimpleGadt2 SimpleGadt2T1 SimpleGadt2T1
