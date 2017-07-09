@@ -28,8 +28,11 @@ test-suite spec
   hs-source-dirs:      test
   other-modules:
     Derive.HetSpec
+    Simple
+
   main-is:             Spec.hs
   default-language:    Haskell2010
   build-depends:       base >= 4.7 && <5
                      , derive-het
                      , hspec == 2.*
+                     , QuickCheck

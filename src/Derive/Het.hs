@@ -3,85 +3,43 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 
-module Derive.Het where
+module Derive.Het
+  ( genHetEq
+  , genHetLte
+  , genHetCmp
+  )
+where
 
 import Language.Haskell.TH
 
-{-
-motivating example:
-
-data TestType a where
-  TestTerm1 :: TestType Int
-  TestTerm2 :: TestType String
-
-heq :: TestType a -> TestType b -> Bool
-heq TestTerm1 TestTerm1 = True
-heq TestTerm2 TestTerm2 = True
-heq _ _ = False
-
-hlte :: TestType a -> TestType b -> Bool
-hlte a b | heq a b = True
-hlte TestTerm1 TestTerm2 = True
-hlte _ _ = False
-
-hcompare :: TestType a -> TestType b -> Ordering
-hcompare TestTerm1 TestTerm1 = EQ
-hcompare TestTerm2 TestTerm2 = EQ
-hcompare TestTerm1 TestTerm2 = LT
-hcompare TestTerm2 TestTerm1 = GT
--}
-
-gadtFields :: Name -> Q [Name]
-gadtFields gadt = do
+gadtFieldsAndSize :: Name -> Q [([Name],Int)]
+gadtFieldsAndSize gadt = do
   TyConI (DataD _ _ _ _ fields _) <- reify gadt
   -- TODO: why exactly does GadtC have multiple names?, not sure if it should return all those
-  let names = concatMap (\(GadtC ns _ _) -> ns) fields
-  return names
+  let namesAndSize = map (\(GadtC ns paramList _) -> (ns, length paramList)) fields
+  return namesAndSize
 
 genHetEq :: Name -> DecsQ
-genHetEq gadt = genHetEq' funcName gadt
-  where funcName = mkName $ "heq" ++ nameBase gadt
-
-genHetEq' :: Name -> Name -> DecsQ
-genHetEq' funcName gadt = do
-  signature <- [t| forall a b. $(return $ ConT gadt) a -> $(return $ ConT gadt) b -> Bool |]
-  names <- gadtFields gadt
-  let equalityClauses = heqCl <$> names
+genHetEq gadt = do
+  signature <- [t| forall a b. $(conT gadt) a -> $(conT gadt) b -> Bool |]
+  body <- [| $(varE hcmpFuncName) x y == EQ |]
   return [ SigD funcName signature
-         , FunD funcName $
-                equalityClauses ++
-                [Clause [WildP, WildP] (NormalB (ConE 'False)) []]
+         , FunD funcName [Clause [VarP $ mkName "x", VarP $ mkName "y"] (NormalB body) []]
          ]
-
-heqCl :: Name -> Clause
-heqCl term = hlteCl term term
+    where
+      funcName = mkName $ "heq" ++ nameBase gadt
+      hcmpFuncName = mkName $ "hcmp" ++ nameBase gadt
 
 genHetLte :: Name -> DecsQ
-genHetLte gadt = genHetLte' funcName gadt
-  where funcName = mkName $ "hlte" ++ nameBase gadt
-
-genHetLte' :: Name -> Name -> DecsQ
-genHetLte' funcName gadt = do
-  let heqName = mkName $ "heq" ++ nameBase gadt
-  signature <- [t| forall a b. $(return $ ConT gadt) a -> $(return $ ConT gadt) b -> Bool |]
-  equalAB <- [| $(return $ VarE heqName) a b |]
-  names <- gadtFields gadt
-  let nameOrderings = orderings names
+genHetLte gadt = do
+  signature <- [t| forall a b. $(conT gadt) a -> $(conT gadt) b -> Bool |]
+  body <- [| $(varE hcmpFuncName) x y <= EQ |]
   return [ SigD funcName signature
-         , FunD funcName $
-                Clause [VarP (mkName "a"), VarP (mkName "b")] (GuardedB [(NormalG equalAB, ConE 'True)]) [] :
-                (uncurry hlteCl <$> nameOrderings) ++
-                [Clause [WildP, WildP] (NormalB (ConE 'False)) []]
+         , FunD funcName [Clause [VarP $ mkName "x", VarP $ mkName "y"] (NormalB body) []]
          ]
-
-hlteCl :: Name -> Name -> Clause
-hlteCl term1 term2 =
-       -- term1 term2 = True
-       Clause [ConP term1 [], ConP term2 []] (NormalB (ConE 'True)) []
-
-orderings :: [a] -> [(a,a)]
-orderings [] = []
-orderings (x:xs) = ((x,) <$> xs) ++ orderings xs
+    where
+      funcName = mkName $ "hlte" ++ nameBase gadt
+      hcmpFuncName = mkName $ "hcmp" ++ nameBase gadt
 
 genHetCmp :: Name -> DecsQ
 genHetCmp gadt = genHetCmp' funcName gadt
@@ -89,31 +47,65 @@ genHetCmp gadt = genHetCmp' funcName gadt
 
 genHetCmp' :: Name -> Name -> DecsQ
 genHetCmp' funcName gadt = do
-  signature <- [t| forall a b. $(return $ ConT gadt) a -> $(return $ ConT gadt) b -> Ordering |]
-  names <- gadtFields gadt
-  let orderingsEq = (\x -> (x,x)) <$> names
-  let orderingsLt = orderings names
-  let orderingsGt = orderings (reverse names)
-  return [ SigD funcName signature
-         , FunD funcName $
-                (uncurry (genClause EQ) <$> orderingsEq)
-                ++ (uncurry (genClause LT) <$> orderingsLt)
-                ++ (uncurry (genClause GT) <$> orderingsGt)
-         ]
+  signature <- [t| forall a b. $(conT gadt) a -> $(conT gadt) b -> Ordering |]
+  namesAndSize <- gadtFieldsAndSize gadt
+  let namesAndSizeFlattened = flatten namesAndSize
+      names = fst <$> namesAndSizeFlattened
+      orderingsEq = (\x -> (x,x)) <$> names
+      orderingsLt = orderings names
+      orderingsGt = orderings (reverse names) in
+      return [ SigD funcName signature
+             , FunD funcName $
+                    concatMap (uncurry genClauseParams) namesAndSizeFlattened
+                    ++ (uncurry (genClause EQ) <$> orderingsEq)
+                    ++ (uncurry (genClause LT) <$> orderingsLt)
+                    ++ (uncurry (genClause GT) <$> orderingsGt)
+             ]
 
 genClause :: Ordering -> Name -> Name -> Clause
 genClause ord term1 term2 =
-          -- term1 term2 = ord
-          Clause [ConP term1 [], ConP term2 []] (NormalB (ConE $ ordName ord)) []
+          -- term1{} term2{} = ord
+          Clause [RecP term1 [], RecP term2 []] (NormalB (ConE $ ordName ord)) []
 
 ordName :: Ordering -> Name
 ordName EQ = 'EQ
 ordName GT = 'GT
 ordName LT = 'LT
 
+genClauseParams :: Name -> Int -> [Clause]
+genClauseParams term params =
+  (uncurry (genClauseParams' term params) <$> ((,) <$> [0 .. params - 1] <*> [LT, GT]))
+
+genClauseParams' :: Name -> Int -> Int -> Ordering -> Clause
+genClauseParams' term paramSize i ord =
+  -- (term _ a _) (term _ b _) | compare a b == ord = ord
+  --         ^ i-th position
+  Clause [ConP term (oneHotVar "a"), ConP term (oneHotVar "b")] (GuardedB [(NormalG (guard "a" "b" ord), ConE $ ordName ord)]) []
+  where
+    -- compare a b == ord
+    guard :: String -> String -> Ordering -> Exp
+    guard var1 var2 result = InfixE (Just (AppE (AppE (VarE 'compare) (VarE $ mkName var1)) (VarE $ mkName var2)))
+                                    (VarE '(==)) (Just (ConE $ ordName result))
+    -- _ a _
+    oneHotVar :: String -> [Pat]
+    oneHotVar v = (\x -> if x then VarP (mkName v) else WildP) <$> oneHot paramSize i
+
+oneHot :: Int -> Int -> [Bool]
+oneHot 0 0 = []
+oneHot max i =
+  if i >= max
+  then error "i must be smaller than max"
+  else replicate i False ++ [True] ++ replicate (max - i - 1) False
+
+flatten :: [([a], b)] -> [(a, b)]
+flatten l = do
+  (la, b) <- l
+  a <- la
+  return (a, b)
+
+orderings :: [a] -> [(a,a)]
+orderings [] = []
+orderings (x:xs) = ((x,) <$> xs) ++ orderings xs
+
 -- print reification
 -- $(stringE . show =<< reify ''TestType)
-
-main :: IO ()
-main = do
-  putStrLn "hello world"
