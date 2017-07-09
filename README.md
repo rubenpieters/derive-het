@@ -29,8 +29,6 @@ hcmpSimpleGadt (SimpleGadtT1{}) (SimpleGadtT2{}) == LT
 hcmpSimpleGadt (SimpleGadtT2{}) (SimpleGadtT1{}) == GT
 ```
 
-We can derive the implementation for the following functions automatically:
-
 We can also use `genHetEq` or `genHetLte` to derive an equality or less-than-or-equal test, based on the above comparison function.
 
 Examples can be found in the examples folder.
